@@ -75,7 +75,14 @@ CREATE TABLE IF NOT EXISTS cluster_typing (
     mlst_st                 TEXT,              -- the ST call: 'ST6', 'novel', 'untypeable', etc.
     mlst_alleles            TEXT,              -- JSON: {gene: allele_number}
     mlst_representative_pdt TEXT,              -- which isolate we typed
-    mlst_error              TEXT,              -- 'no_assembly' | 'no_match' | NULL
+    mlst_error              TEXT,
+    sistr_serovar           TEXT,
+    sistr_antigenic_formula TEXT,
+    sistr_serogroup         TEXT,
+    sistr_h1                TEXT,
+    sistr_h2                TEXT,
+    sistr_soc               INTEGER DEFAULT 0,
+    sistr_error             TEXT,              -- 'no_assembly' | 'no_match' | NULL
 
     typed_at                TIMESTAMP NOT NULL,
     PRIMARY KEY (pathogen, pds_acc)
@@ -175,3 +182,13 @@ CREATE TABLE IF NOT EXISTS pdg_releases (
     ingested_at             TIMESTAMP NOT NULL,
     PRIMARY KEY (pathogen, pdg_release)
 );
+
+-- Performance indexes for large datasets (Salmonella has 800k+ isolates)
+CREATE INDEX IF NOT EXISTS idx_isolates_pds_acc ON isolates(pds_acc);
+CREATE INDEX IF NOT EXISTS idx_isolates_pathogen ON isolates(pathogen);
+CREATE INDEX IF NOT EXISTS idx_isolates_epi_type ON isolates(epi_type);
+CREATE INDEX IF NOT EXISTS idx_isolates_collection_date ON isolates(collection_date);
+CREATE INDEX IF NOT EXISTS idx_isolates_target_creation ON isolates(target_creation_date);
+CREATE INDEX IF NOT EXISTS idx_isolates_serovar ON isolates(serovar);
+CREATE INDEX IF NOT EXISTS idx_isolates_geo ON isolates(geo_loc_name);
+CREATE INDEX IF NOT EXISTS idx_amr_pdt_acc ON isolate_amr(pdt_acc);

@@ -81,6 +81,15 @@ def get_recent_activity_clusters(
         d["host_summary"] = json.loads(d.pop("host_summary_json") or "[]")
         d["signals"] = json.loads(d.pop("signals_json") or "{}")
         d["mlst_alleles_dict"] = json.loads(d["mlst_alleles"]) if d.get("mlst_alleles") else {}
+        # Normalize consensus_serovar → consensus_serotype
+        import re as _re
+        raw = d.get("consensus_serovar") or ""
+        clean = _re.sub(r"(?i)^salmonella\s+(enterica\s+subsp\.\s+enterica\s+serovar\s+)?", "", raw).strip()
+        if clean and not _re.match(r"^[A-Z]", clean):
+            clean = clean.capitalize()
+        d["consensus_serotype"] = clean if clean else None
+        d["consensus_serotype_n"] = d.get("consensus_serovar_n")
+        d["consensus_serotype_total"] = d.get("consensus_serovar_total")
         out.append(d)
     return out
 

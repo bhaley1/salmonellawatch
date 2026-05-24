@@ -22,7 +22,7 @@ import sys
 from datetime import datetime
 
 from .. import config, db
-from . import assembly, mlst, representative, serovar
+from . import assembly, mlst, representative, serovar, serotype as sistr_mod
 
 log = logging.getLogger("pathogen-watch-subtype")
 
@@ -48,6 +48,7 @@ def _upsert_typing(
     serovar_consensus: serovar.SerovarConsensus,
     mlst_result: mlst.MLSTResult | None,
     representative_pdt: str | None,
+    sistr_result: sistr_mod.SISTRResult | None = None,
 ) -> None:
     """Upsert a cluster_typing row.
 
@@ -91,14 +92,34 @@ def _upsert_typing(
         final_mlst_rep = existing["mlst_representative_pdt"] if existing else None
         final_mlst_error = existing["mlst_error"] if existing else None
 
+    # Resolve SISTR fields
+    if sistr_result is not None:
+        final_sistr_serovar = sistr_result.serovar
+        final_sistr_formula = sistr_result.antigenic_formula
+        final_sistr_serogroup = sistr_result.serogroup
+        final_sistr_h1 = sistr_result.h1
+        final_sistr_h2 = sistr_result.h2
+        final_sistr_soc = 1 if sistr_mod.is_serotype_of_concern(sistr_result) else 0
+        final_sistr_error = sistr_result.error
+    else:
+        final_sistr_serovar = existing["sistr_serovar"] if existing else None
+        final_sistr_formula = existing["sistr_antigenic_formula"] if existing else None
+        final_sistr_serogroup = existing["sistr_serogroup"] if existing else None
+        final_sistr_h1 = existing["sistr_h1"] if existing else None
+        final_sistr_h2 = existing["sistr_h2"] if existing else None
+        final_sistr_soc = existing["sistr_soc"] if existing else 0
+        final_sistr_error = existing["sistr_error"] if existing else None
+
     conn.execute("""
         INSERT INTO cluster_typing (
             pathogen, pds_acc,
             consensus_serovar, consensus_serovar_n, consensus_serovar_total,
             mlst_scheme, mlst_st, mlst_alleles,
             mlst_representative_pdt, mlst_error,
+            sistr_serovar, sistr_antigenic_formula, sistr_serogroup,
+            sistr_h1, sistr_h2, sistr_soc, sistr_error,
             typed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(pathogen, pds_acc) DO UPDATE SET
             consensus_serovar       = excluded.consensus_serovar,
             consensus_serovar_n     = excluded.consensus_serovar_n,
@@ -108,12 +129,21 @@ def _upsert_typing(
             mlst_alleles            = excluded.mlst_alleles,
             mlst_representative_pdt = excluded.mlst_representative_pdt,
             mlst_error              = excluded.mlst_error,
+            sistr_serovar           = excluded.sistr_serovar,
+            sistr_antigenic_formula = excluded.sistr_antigenic_formula,
+            sistr_serogroup         = excluded.sistr_serogroup,
+            sistr_h1                = excluded.sistr_h1,
+            sistr_h2                = excluded.sistr_h2,
+            sistr_soc               = excluded.sistr_soc,
+            sistr_error             = excluded.sistr_error,
             typed_at                = excluded.typed_at
     """, (
         pathogen, pds_acc,
         final_serovar, final_serovar_n, final_serovar_total,
         final_mlst_scheme, final_mlst_st, final_mlst_alleles,
         final_mlst_rep, final_mlst_error,
+        final_sistr_serovar, final_sistr_formula, final_sistr_serogroup,
+        final_sistr_h1, final_sistr_h2, final_sistr_soc, final_sistr_error,
         now,
     ))
 
@@ -217,11 +247,23 @@ def run_mlst_backfill(
 
         # 3. Run MLST
         result = mlst.run_mlst(fasta, scheme)
+
+        # 4. Run SISTR (Salmonella only; fast with --no-cgmlst)
+        sistr_result = None
+        if pathogen == "Salmonella":
+            sistr_result = sistr_mod.run_sistr(fasta)
+            if sistr_result.serovar:
+                soc = sistr_mod.is_serotype_of_concern(sistr_result)
+                log.info("[%s %s] SISTR: %s%s",
+                         pathogen, pds_acc, sistr_result.serovar,
+                         " ⚠SOC" if soc else "")
+
         _upsert_typing(
             conn, pathogen, pds_acc,
             serovar_consensus=serovar.SerovarConsensus(None, 0, 0),
             mlst_result=result,
             representative_pdt=rep.pdt_acc,
+            sistr_result=sistr_result,
         )
         conn.commit()
 

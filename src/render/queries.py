@@ -57,7 +57,13 @@ def get_recent_activity_clusters(
                ct.mlst_scheme, ct.mlst_st, ct.mlst_alleles,
                ct.mlst_representative_pdt, ct.mlst_error,
                ct.sistr_serovar, ct.sistr_antigenic_formula,
-               ct.sistr_serogroup, ct.sistr_soc, ct.sistr_error
+               ct.sistr_serogroup, ct.sistr_soc, ct.sistr_error,
+               COALESCE(ct.consensus_serovar,
+                   (SELECT serovar FROM isolates
+                    WHERE pds_acc = cs.pds_acc
+                    AND serovar IS NOT NULL AND serovar != ''
+                    GROUP BY serovar ORDER BY COUNT(*) DESC LIMIT 1)
+               ) AS effective_serovar
         FROM cluster_summary cs
         LEFT JOIN cluster_typing ct
                ON cs.pathogen = ct.pathogen AND cs.pds_acc = ct.pds_acc
@@ -141,7 +147,35 @@ def get_recent_activity_clusters(
         d["mlst_alleles_dict"] = json.loads(d["mlst_alleles"]) if d.get("mlst_alleles") else {}
 
         # SOC flag from SISTR
-        d["is_soc"] = bool(d.get("sistr_soc"))
+        # SOC: use SISTR result if available, else fall back to consensus_serovar
+        EXACT_SOC = {
+            "enteritidis","typhimurium","heidelberg","infantis","newport",
+            "uganda","braenderup","muenchen","montevideo","javiana","reading",
+            "dublin","oranienburg","potsdam","thompson","saintpaul","hadar",
+            "schwarzengrund","anatum","berta"
+        }
+        SOC_FORMULAS = {"4:i:-","4,[5]:i:-","4,5:i:-","4,5,12:i:-","1,4,[5],12:i:-"}
+        # Also match monophasic by serovar name patterns
+        SOC_SEROVAR_PATTERNS = ["i 4", "i,4", "4,[5],12:i", "monophasic"]
+        if d.get("sistr_soc") == 1:
+            d["is_soc"] = True
+        elif d.get("sistr_soc") == 0:
+            # SISTR ran but returned not-SOC; double-check display serotype
+            import re as _re3
+            sv_raw = (d.get("effective_serovar") or d.get("consensus_serovar") or "")
+            sv_check = _re3.sub(r"(?i)^salmonella\s+(enterica\s+subsp\.\s+enterica\s+serovar\s+)?", "", sv_raw).strip().lower()
+            formula_check = (d.get("sistr_antigenic_formula") or "").lower()
+            d["is_soc"] = (sv_check in EXACT_SOC or
+                          any(f in formula_check for f in SOC_FORMULAS) or
+                          any(p in sv_check for p in SOC_SEROVAR_PATTERNS))
+        else:
+            import re as _re2
+            sv_raw = (d.get("effective_serovar") or d.get("consensus_serovar") or "")
+            sv = _re2.sub(r"(?i)^salmonella\s+(enterica\s+subsp\.\s+enterica\s+serovar\s+)?", "", sv_raw).strip().lower()
+            formula = (d.get("sistr_antigenic_formula") or "").lower()
+            d["is_soc"] = (sv in EXACT_SOC or 
+                          any(f in formula for f in SOC_FORMULAS) or
+                          any(p in sv for p in SOC_SEROVAR_PATTERNS))
 
         # Attach pre-fetched aggregations
         pds = d["pds_acc"]
@@ -171,26 +205,17 @@ def get_recent_activity_clusters(
         d["source_breakdown"] = src
         d["sistr_formula"] = d.get("sistr_antigenic_formula")
 
-        # Serotype: prefer SISTR, fall back to normalized consensus_serovar
+        # Serotype: SISTR > effective_serovar (consensus or isolates fallback)
         import re as _re
         sistr_sv = d.get("sistr_serovar")
-        if sistr_sv and sistr_sv not in ("", "-", None):
+        if sistr_sv and sistr_sv not in ("", "-"):
             d["consensus_serotype"] = sistr_sv
         else:
-            raw = d.get("consensus_serovar") or ""
+            raw = d.get("effective_serovar") or d.get("consensus_serovar") or ""
             clean = _re.sub(r"(?i)^salmonella\s+(enterica\s+subsp\.\s+enterica\s+serovar\s+)?", "", raw).strip()
             if clean and not _re.match(r"^[A-Z]", clean):
                 clean = clean.capitalize()
             d["consensus_serotype"] = clean if clean else None
-        d["consensus_serotype_n"] = d.get("consensus_serovar_n")
-        d["consensus_serotype_total"] = d.get("consensus_serovar_total")
-        # Normalize consensus_serovar → consensus_serotype
-        import re as _re
-        raw = d.get("consensus_serovar") or ""
-        clean = _re.sub(r"(?i)^salmonella\s+(enterica\s+subsp\.\s+enterica\s+serovar\s+)?", "", raw).strip()
-        if clean and not _re.match(r"^[A-Z]", clean):
-            clean = clean.capitalize()
-        d["consensus_serotype"] = clean if clean else None
         d["consensus_serotype_n"] = d.get("consensus_serovar_n")
         d["consensus_serotype_total"] = d.get("consensus_serovar_total")
         out.append(d)

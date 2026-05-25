@@ -287,10 +287,10 @@
         <!-- WHAT'S NEW: the activity that brought this cluster onto the page -->
         <div class="card-row card-row-top">
           <div class="recent-humans">
-            <h4>New human cases (last {{ window_days }}d)</h4>
-            <ul>
-              {% for h in c.new_humans_dates[:10] %}
-              <li>
+            <h4 class="human-cases-header">New human cases (last {{ window_days }}d)</h4>
+            <ul class="human-cases-list">
+              {% for h in c.new_humans_dates %}
+              <li data-geo-country="{{ h.geo.split(':')[0].strip() if h.geo else '' }}">
                 {% if h.biosample %}
                 <a href="https://www.ncbi.nlm.nih.gov/biosample/{{ h.biosample }}"
                    class="pdt-acc pdt-link"
@@ -306,10 +306,8 @@
                 · {{ h.geo or '—' }}
               </li>
               {% endfor %}
-              {% if c.new_humans_dates|length > 10 %}
-              <li class="more">+ {{ c.new_humans_dates|length - 10 }} more</li>
-              {% endif %}
             </ul>
+            <p class="human-cases-more" style="display:none"></p>
             <!-- Non-human isolates last 60d -->
             <div class="recent-nonhuman">
               <h4>New non-human isolates (last {{ window_days }}d)</h4>
@@ -348,14 +346,11 @@
         {% if c.amr_genotype_list %}
         <div class="card-row card-row-amr">
           <div class="amr-section">
-            <h4>AMR genotypes observed in cluster</h4>
-            <div class="amr-genotype-list">
-              {% for amr in c.amr_genotype_list[:10] %}
-                <span class="amr-chip">{{ amr }}</span>
+            <h4>AMR genotypes observed in cluster <span class="amr-country-note"></span></h4>
+            <div class="amr-genotype-list amr-scrollable">
+              {% for amr in c.amr_genotype_list %}
+                <span class="amr-chip" data-amr="{{ amr }}">{{ amr }}</span>
               {% endfor %}
-              {% if c.amr_genotype_list|length > 10 %}
-                <span class="amr-chip amr-more">+{{ c.amr_genotype_list|length - 10 }} more variants</span>
-              {% endif %}
             </div>
           </div>
           <!-- SOURCE BREAKDOWN -->
@@ -513,7 +508,6 @@
   var cards = Array.from(document.querySelectorAll('#cluster-list .cluster-card'));
   var total = cards.length;
 
-  // Stat tile elements
   var tileActive = document.getElementById('stat-active-clusters');
   var tileHuman  = document.getElementById('stat-new-humans');
   var tileMixed  = document.getElementById('stat-mixed');
@@ -522,6 +516,70 @@
   var globalActive = tileActive ? parseInt(tileActive.textContent) : 0;
   var globalHuman  = tileHuman  ? parseInt(tileHuman.textContent)  : 0;
   var globalMixed  = tileMixed  ? parseInt(tileMixed.textContent)  : 0;
+
+  function parseJSON(s) { try { return JSON.parse(s || '{}'); } catch(e) { return {}; } }
+
+  function updateCardSections(card, country) {
+    // --- Human cases ---
+    var humanList = card.querySelector('.human-cases-list');
+    var humanMore = card.querySelector('.human-cases-more');
+    if (humanList) {
+      var items = Array.from(humanList.querySelectorAll('li'));
+      if (country === 'all') {
+        items.forEach(function(li, i) { li.style.display = i < 10 ? '' : 'none'; });
+        if (humanMore) {
+          var hidden = items.length - 10;
+          humanMore.style.display = hidden > 0 ? '' : 'none';
+          if (hidden > 0) humanMore.textContent = '+ ' + hidden + ' more';
+        }
+      } else {
+        var shown = 0;
+        items.forEach(function(li) {
+          var geo = (li.getAttribute('data-geo-country') || '').toLowerCase();
+          var countryData = parseJSON(card.getAttribute('data-country-humans'));
+          // Check if this isolate's geo matches
+          var show = geo.includes(country.toLowerCase()) ||
+                     Object.keys(countryData).some(function(k) {
+                       return k.toLowerCase() === country.toLowerCase();
+                     });
+          // Simpler: show all items whose geo contains selected country
+          var geoFull = li.textContent;
+          show = geoFull.toLowerCase().includes(country.toLowerCase());
+          li.style.display = show ? '' : 'none';
+          if (show) shown++;
+        });
+        if (humanMore) {
+          humanMore.style.display = shown === 0 ? '' : 'none';
+          if (shown === 0) humanMore.textContent = 'No cases from ' + country + ' in last 60d';
+        }
+      }
+    }
+
+    // --- AMR genotypes ---
+    var amrList = card.querySelector('.amr-scrollable');
+    var amrNote = card.querySelector('.amr-country-note');
+    if (amrList) {
+      if (country === 'all') {
+        amrList.querySelectorAll('.amr-chip').forEach(function(c) { c.style.display = ''; });
+        if (amrNote) amrNote.textContent = '';
+      } else {
+        var countryAmr = parseJSON(card.getAttribute('data-country-amr'));
+        var myAmr = countryAmr[country] || [];
+        var myAmrSet = new Set(myAmr.map(function(x) { return x.amr; }));
+        var chips = amrList.querySelectorAll('.amr-chip');
+        var shown = 0;
+        chips.forEach(function(chip) {
+          var amrVal = chip.getAttribute('data-amr') || '';
+          var show = myAmrSet.has(amrVal);
+          chip.style.display = show ? '' : 'none';
+          if (show) shown++;
+        });
+        if (amrNote) amrNote.textContent = shown > 0
+          ? '(' + shown + ' variants in ' + country + ')'
+          : '(no AMR data for ' + country + ')';
+      }
+    }
+  }
 
   function applyAll() {
     var wantCountry  = countryFilter.value;
@@ -543,17 +601,29 @@
       if (wantCountry !== 'all' && countries.indexOf(wantCountry) === -1) show = false;
       if (wantSerotype === 'soc' && !soc) show = false;
       else if (wantSerotype === 'monophasic') {
-        // Match monophasic Typhimurium variants
         if (!serotype.includes('i,4') && !serotype.includes('monophasic') && !serotype.includes('1,4,[5],12:i')) show = false;
       }
       else if (wantSerotype !== 'all' && wantSerotype !== 'soc' && serotype !== wantSerotype.toLowerCase()) show = false;
       if (wantST && st !== wantST) show = false;
 
       card.style.display = show ? '' : 'none';
-      if (show) { visible++; newHumans += nh; if (isMixed) mixed++; }
+      if (show) {
+        visible++;
+        // Count human cases for this country
+        if (wantCountry !== 'all') {
+          var countryHumans = parseJSON(card.getAttribute('data-country-humans'));
+          var countryList = countryHumans[wantCountry] || [];
+          newHumans += countryList.length;
+        } else {
+          newHumans += nh;
+        }
+        if (isMixed) mixed++;
+        // Update card sections for country filter
+        updateCardSections(card, wantCountry);
+      }
     });
 
-    // Sort visible cards
+    // Sort
     var visibleCards = cards.filter(function(c){ return c.style.display !== 'none'; });
     visibleCards.sort(function(a, b) {
       if (sortBy === 'cases')  return parseInt(b.getAttribute('data-new-humans')||0) - parseInt(a.getAttribute('data-new-humans')||0);
@@ -564,15 +634,14 @@
     });
     visibleCards.forEach(function(card){ list.appendChild(card); });
 
-    // Update status
+    // Issue 6: update status with count
     if (status) {
       var parts = [];
       if (wantCountry !== 'all') parts.push(wantCountry);
       if (wantSerotype !== 'all') parts.push(wantSerotype === 'soc' ? '⚠ SOC only' : wantSerotype);
       if (wantST) parts.push('ST' + wantST);
-      status.textContent = parts.length
-        ? 'showing ' + visible + ' clusters · ' + parts.join(', ')
-        : 'showing ' + visible + ' clusters';
+      var filterDesc = parts.length ? ' · filters: ' + parts.join(', ') : '';
+      status.textContent = visible + ' cluster' + (visible !== 1 ? 's' : '') + ' shown' + filterDesc;
     }
 
     // Update stat tiles
@@ -597,7 +666,7 @@
   if (sortSelect)     sortSelect.addEventListener('change', applyAll);
   applyAll();
 
-  // Chip links to methods page — anchors match methods.html section IDs
+  // Chip links to methods page
   document.querySelectorAll('[class*="signal-"]').forEach(function(chip) {
     var cls = chip.className || '';
     var anchor = 'signals';

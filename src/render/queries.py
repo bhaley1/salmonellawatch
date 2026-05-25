@@ -128,6 +128,80 @@ def get_recent_activity_clusters(
                 source_by_cluster[pds] = {}
             source_by_cluster[pds][sr["ifsac_category"]] = sr["n"]
 
+    # Pre-fetch country-keyed human cases for filtering
+    country_human_by_cluster: dict[str, dict] = {}
+    if pds_accs:
+        ch_rows = conn.execute(f"""
+            SELECT pds_acc, geo_country,
+                   pdt_acc, biosample_acc, collection_date,
+                   collection_date_raw, geo_loc_name,
+                   target_creation_date
+            FROM isolates
+            WHERE pds_acc IN ({placeholders})
+            AND source_category = 'Human'
+            AND collection_date >= date('now', '-60 days')
+            ORDER BY pds_acc, collection_date DESC
+        """, pds_accs).fetchall()
+        for cr in ch_rows:
+            pds = cr["pds_acc"]
+            country = cr["geo_country"] or "Not Provided"
+            if pds not in country_human_by_cluster:
+                country_human_by_cluster[pds] = {}
+            if country not in country_human_by_cluster[pds]:
+                country_human_by_cluster[pds][country] = []
+            country_human_by_cluster[pds][country].append({
+                "pdt": cr["pdt_acc"],
+                "biosample": cr["biosample_acc"],
+                "collection_date": cr["collection_date_raw"] or cr["collection_date"],
+                "geo": cr["geo_loc_name"],
+            })
+
+    # Pre-fetch country-keyed AMR genotypes
+    country_amr_by_cluster: dict[str, dict] = {}
+    if pds_accs:
+        ca_rows = conn.execute(f"""
+            SELECT pds_acc, geo_country, amr_genotypes, COUNT(*) as n
+            FROM isolates
+            WHERE pds_acc IN ({placeholders})
+            AND amr_genotypes IS NOT NULL AND amr_genotypes != ''
+            GROUP BY pds_acc, geo_country, amr_genotypes
+            ORDER BY pds_acc, geo_country, n DESC
+        """, pds_accs).fetchall()
+        for ca in ca_rows:
+            pds = ca["pds_acc"]
+            country = ca["geo_country"] or "Not Provided"
+            if pds not in country_amr_by_cluster:
+                country_amr_by_cluster[pds] = {}
+            if country not in country_amr_by_cluster[pds]:
+                country_amr_by_cluster[pds][country] = []
+            country_amr_by_cluster[pds][country].append(
+                {"amr": ca["amr_genotypes"], "n": ca["n"]}
+            )
+
+    # Pre-fetch country-keyed source breakdown
+    country_src_by_cluster: dict[str, dict] = {}
+    if pds_accs:
+        cs_rows = conn.execute(f"""
+            SELECT pds_acc, geo_country, ifsac_category,
+                   isolation_source, source_category, COUNT(*) as n
+            FROM isolates
+            WHERE pds_acc IN ({placeholders})
+            GROUP BY pds_acc, geo_country, ifsac_category, source_category
+            ORDER BY pds_acc, geo_country, n DESC
+        """, pds_accs).fetchall()
+        for cs in cs_rows:
+            pds = cs["pds_acc"]
+            country = cs["geo_country"] or "Not Provided"
+            if pds not in country_src_by_cluster:
+                country_src_by_cluster[pds] = {}
+            if country not in country_src_by_cluster[pds]:
+                country_src_by_cluster[pds][country] = []
+            country_src_by_cluster[pds][country].append({
+                "cat": cs["source_category"] or "Unknown",
+                "src": cs["ifsac_category"] or cs["isolation_source"] or "(unspecified)",
+                "n": cs["n"],
+            })
+
     out: list[dict[str, Any]] = []
     for r in rows:
         d = dict(r)
@@ -180,6 +254,9 @@ def get_recent_activity_clusters(
         # Attach pre-fetched aggregations
         pds = d["pds_acc"]
         d["amr_genotype_list"] = amr_by_cluster.get(pds, [])
+        d["country_human_cases"] = country_human_by_cluster.get(pds, {})
+        d["country_amr"] = country_amr_by_cluster.get(pds, {})
+        d["country_src"] = country_src_by_cluster.get(pds, {})
         d["recent_nonhuman"] = nonhuman_by_cluster.get(pds, [])
 
         # Source breakdown bucketed for display

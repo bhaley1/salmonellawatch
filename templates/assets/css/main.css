@@ -816,3 +816,21 @@ footer a { color: var(--teal-deep); }
 /* ── PDS accession link ─────────────────────────────────── */
 .cluster-id-link { text-decoration: none; }
 .cluster-id-link:hover code { text-decoration: underline; color: var(--teal-deep); }
+
+/* ── Scrollable AMR list ─────────────────────────────────── */
+.amr-scrollable {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 6px;
+  background: var(--paper);
+}
+
+/* ── Vertical year labels on histogram ──────────────────── */
+.histogram-x-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 9px;
+}

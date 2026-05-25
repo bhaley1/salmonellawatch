@@ -136,7 +136,7 @@
   {% if clusters %}
     <div id="cluster-list">
     {% for c in clusters %}
-    <article class="cluster-card" data-human-countries="{{ c.human_countries_attr }}" data-serotype="{{ c.consensus_serotype or '' }}" data-soc="{{ '1' if c.is_soc else '0' }}" data-st="{{ c.mlst_st or '' }}" data-accel="{{ ((c.signals or {}).get('acceleration') or {}).get('ratio') or 0 }}" data-latest="{{ c.latest_target_creation_date or '' }}" data-span="{{ c.temporal_span_days or 0 }}" data-new-humans="{{ c.new_humans_in_window }}" data-mixed="{{ '1' if c.n_human > 0 and c.n_nonhuman > 0 else '0' }}">
+    <article class="cluster-card" data-human-countries="{{ c.human_countries_attr }}" data-serotype="{{ c.consensus_serotype or '' }}" data-soc="{{ '1' if c.is_soc else '0' }}" data-st="{{ c.mlst_st or '' }}" data-accel="{{ ((c.signals or {}).get('acceleration') or {}).get('ratio') or 0 }}" data-latest="{{ c.latest_target_creation_date or '' }}" data-span="{{ c.temporal_span_days or 0 }}" data-new-humans="{{ c.new_humans_in_window }}" data-mixed="{{ '1' if c.n_human > 0 and c.n_nonhuman > 0 else '0' }}" data-country-humans="{{ c.country_human_cases|tojson|e }}" data-country-amr="{{ c.country_amr|tojson|e }}" data-country-src="{{ c.country_src|tojson|e }}">
 
       <header class="cluster-card-head">
         <div class="cluster-card-id">

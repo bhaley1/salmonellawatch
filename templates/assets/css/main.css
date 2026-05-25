@@ -773,3 +773,20 @@ footer a { color: var(--teal-deep); }
 }
 
 /* Salmon-toned page background */
+
+/* SOC badges */
+.soc-badge {
+  display: inline-block;
+  background: #dc2626;
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+.headline-soc { color: #dc2626 !important; font-weight: 700; }
+.typing-soc { color: #dc2626; font-weight: 700; }

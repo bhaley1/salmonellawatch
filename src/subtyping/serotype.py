@@ -34,6 +34,7 @@ class SISTRResult:
 
 # Serotypes of concern from Wheeler et al. 2024 (Front. Microbiol.)
 # doi: 10.3389/fmicb.2024.1307563
+# Exact SOC list from Wheeler et al. 2024 (Front. Microbiol. doi:10.3389/fmicb.2024.1307563)
 SEROTYPES_OF_CONCERN: set[str] = {
     "Enteritidis",
     "Typhimurium",
@@ -55,8 +56,6 @@ SEROTYPES_OF_CONCERN: set[str] = {
     "Schwarzengrund",
     "Anatum",
     "Berta",
-    # Monophasic Typhimurium variant — listed separately as I,4,[5],12:i:-
-    # matched by antigenic formula check below
 }
 
 # Antigenic formulas that are SOC even if serovar name differs
